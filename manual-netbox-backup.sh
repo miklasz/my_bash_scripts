@@ -1,6 +1,6 @@
 #!/bin/bash
 user="netbox"
-password="password-goes-here"
+password="PASSWORD"
 host="localhost"
 db_name="netbox"
 date=$(date +"%d-%b-%Y-%H.%M.%S")
