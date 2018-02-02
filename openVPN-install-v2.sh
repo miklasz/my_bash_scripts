@@ -11,7 +11,8 @@ apt-get update && apt-get install -y     \
     uuid                 \
   dnsutils             \
   nginx-light             \
-  easy-rsa
+  easy-rsa             \
+  openssl
 
 MY_IP_ADDR=$(dig @ns1.google.com -t txt o-o.myaddr.l.google.com +short | sed 's/"//g')
 log ""
@@ -53,9 +54,26 @@ log "Copy easy-rsa to /etc/openvpn/easy-rsa"
 log ""
 cp -r /usr/share/easy-rsa/ /etc/openvpn/
 log ""
-log "Edit vars file"
+log "source vars data"
 log ""
-cat <<EOFVARS > /etc/openvpn/easy-rsa/vars
+export KEY_COUNTRY="UK"
+export KEY_PROVINCE="Manchester"
+export KEY_CITY="Manchester"
+export KEY_ORG="Bartron"
+export KEY_EMAIL="aqq@aqq.pl"
+export KEY_OU="Bartron"
+export KEY_NAME="server"
+log ""
+log "Create dh key "
+log ""
+openssl dhparam -out /etc/openvpn/dh2048.pem 2048
+log ""
+log "clean old keys if exists"
+log ""
+cd /etc/openvpn/easy-rsa/ && ./clean-all
+log ""
+log "read vars"
+log ""
 # easy-rsa parameter settings
 
 # NOTE: If you installed from an RPM,
@@ -119,15 +137,6 @@ export KEY_EXPIRE=3650
 # These are the default values for fields
 # which will be placed in the certificate.
 # Don't leave any of these fields blank.
-export KEY_COUNTRY="UK"
-export KEY_PROVINCE="Manchester"
-export KEY_CITY="Monton Village"
-export KEY_ORG="Bartron"
-export KEY_EMAIL="bartosz@miklaszewski.com"
-export KEY_OU="bartron"
-
-# X509 Subject Field
-export KEY_NAME="vpn-server"
 
 # PKCS11 Smart Card
 # export PKCS11_MODULE_PATH="/usr/lib/changeme.so"
@@ -136,39 +145,44 @@ export KEY_NAME="vpn-server"
 # If you'd like to sign all keys with the same Common Name, uncomment the KEY_CN export below
 # You will also need to make sure your OpenVPN server config has the duplicate-cn option set
 # export KEY_CN="CommonName"
-EOFVARS
 log ""
-log "Create dh key "
+log "build ca"
 log ""
-openssl dhparam -out /etc/openvpn/dh2048.pem 2048
-log ""
-log "read var file"
-log ""
-cd /etc/openvpn/easy-rsa/ && . ./vars
-cd /etc/openvpn/easy-rsa/ && ./clean-all
 cd /etc/openvpn/easy-rsa/ && ./build-ca
-EOFBUILDCA
-
-
-
-
+log ""
+log "build server key"
+log ""
+cd /etc/openvpn/easy-rsa/ && ./build-key-server server
+log ""
+log "move server keys to /etc/openvpn"
+log ""
+cd /etc/openvpn/easy-rsa/keys && cp server.crt server.key ca.crt /etc/openvpn/
+log ""
+log "build personal key and move to ~/bartron-key/"
+log ""
+cd /etc/openvpn/easy-rsa/ && ./build-key bartron
+mkdir /root/bartron-key/
+cd /etc/openvpn/easy-rsa/keys && cp bartron.crt bartron.key ca.crt /root/bartron-key/
+log ""
+log "create .ovpn file"
+log ""
 log "Create client configuration"
-cat <<EOFCLIENT > /root/client.ovpn
+cat <<EOFCLIENT > ~/bartron-key/bartron-vpn.ovpn
 client
 nobind
 comp-lzo
 dev tun
 <key>
-`cat /etc/openvpn/key.pem`
+`cat /root/bartron-key/bartron.key`
 </key>
 <cert>
-`cat /etc/openvpn/cert.pem`
+`cat /root/bartron-key/bartron.crt`
 </cert>
 <ca>
-`cat /etc/openvpn/cert.pem`
+`cat /root/bartron-key/ca.crt`
 </ca>
 <dh>
-`cat /etc/openvpn/dh.pem`
+`cat /etc/openvpn/dh2048.pem`
 </dh>
 <connection>
 remote $MY_IP_ADDR 1194 udp
@@ -196,7 +210,7 @@ EOFUDP
 
 echo "Setup HTTP server for serving client certificate"
 mkdir -p /usr/share/nginx/openvpn/$UUID
-cp /root/client.ovpn /usr/share/nginx/openvpn/$UUID/$HOSTNAME.ovpn
+cp /root/bartron-key/bartron-vpn.ovpn /usr/share/nginx/openvpn/$UUID/$HOSTNAME.ovpn
 touch /usr/share/nginx/openvpn/$UUID/index.html
 touch /usr/share/nginx/openvpn/index.html
 
